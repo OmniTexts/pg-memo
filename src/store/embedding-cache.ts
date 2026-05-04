@@ -47,7 +47,7 @@ export async function loadEmbeddingCache(params: {
   return out;
 }
 
-/** Upsert embeddings into cache */
+/** Upsert embeddings into cache (batch via UNNEST) */
 export async function upsertEmbeddingCache(params: {
   client: PgClient;
   enabled: boolean;
@@ -61,24 +61,46 @@ export async function upsertEmbeddingCache(params: {
   }
 
   const now = params.now ?? Date.now();
+  const providers: string[] = [];
+  const models: string[] = [];
+  const providerKeys: string[] = [];
+  const hashes: string[] = [];
+  const embeddingJsons: string[] = [];
+  const dims: number[] = [];
+  const timestamps: number[] = [];
 
   for (const entry of params.entries) {
-    const embedding = entry.embedding ?? [];
+    const emb = entry.embedding ?? [];
+    providers.push(params.provider.id);
+    models.push(params.provider.model);
+    providerKeys.push(params.providerKey);
+    hashes.push(entry.hash);
+    embeddingJsons.push(JSON.stringify(emb));
+    dims.push(emb.length);
+    timestamps.push(now);
+  }
+
+  // Batch in groups to stay within PostgreSQL parameter limits
+  const batchSize = 400;
+  for (let start = 0; start < hashes.length; start += batchSize) {
+    const end = start + batchSize;
     await params.client.query(
       `INSERT INTO embedding_cache (provider, model, provider_key, hash, embedding, dims, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       SELECT * FROM UNNEST(
+         $1::text[], $2::text[], $3::text[], $4::text[], $5::jsonb[], $6::int[], $7::bigint[]
+       )
        ON CONFLICT (provider, model, provider_key, hash) DO UPDATE SET
          embedding = EXCLUDED.embedding,
          dims = EXCLUDED.dims,
          updated_at = EXCLUDED.updated_at`,
       [
-        params.provider.id,
-        params.provider.model,
-        params.providerKey,
-        entry.hash,
-        JSON.stringify(embedding),
-        embedding.length,
-        now,
+        providers.slice(start, end),
+        models.slice(start, end),
+        providerKeys.slice(start, end),
+        hashes.slice(start, end),
+        embeddingJsons.slice(start, end),
+        dims.slice(start, end),
+        timestamps.slice(start, end),
       ],
     );
   }

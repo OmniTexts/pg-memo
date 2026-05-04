@@ -1,6 +1,17 @@
 /** Memory source type, compatible with openclaw's MemorySource */
 export type MemorySource = "memory" | "sessions";
 
+/**
+ * File reader adapter — extracts plain text from a specific file format.
+ * Register custom readers via PgMemoryConfig.readers.
+ */
+export type FileReader = {
+  /** File extensions this reader handles (e.g. [".pdf"]) */
+  extensions: string[];
+  /** Extract text content from a file */
+  read(filePath: string): Promise<{ content: string; metadata?: Record<string, unknown> }>;
+};
+
 /** Search result, compatible with openclaw's MemorySearchResult */
 export type MemorySearchResult = {
   path: string;
@@ -117,6 +128,10 @@ export type PgMemoryConfig = {
     mmr?: { enabled: boolean; lambda?: number };
     temporalDecay?: { enabled: boolean; halfLifeDays?: number };
   };
+  /** Supported file extensions (default [".md"]). E.g. [".md", ".txt", ".pdf", ".docx", ".xlsx"] */
+  extensions?: string[];
+  /** Custom file readers for non-text formats. Built-in readers handle .md/.txt. */
+  readers?: FileReader[];
   /** Sync / watch config */
   sync?: {
     /** Watch workspace for file changes (default true if workspaceDir set) */

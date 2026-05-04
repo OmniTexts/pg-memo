@@ -1,15 +1,16 @@
 import type { PgClient } from "../pg-client.js";
 import type { MemorySource, SearchRowResult } from "../types.js";
+import { tokenizeForFts } from "../utils/tokenizer.js";
 
 const FTS_QUERY_TOKEN_RE = /[\p{L}\p{N}_]+/gu;
 
 /** Build a tsquery string from raw input: "term1" & "term2" */
 export function buildTsQuery(raw: string): string | null {
-  const tokens =
-    raw
-      .match(FTS_QUERY_TOKEN_RE)
-      ?.map((t) => t.trim())
-      .filter(Boolean) ?? [];
+  // Pre-tokenize with segmentit for Chinese support, then extract tokens
+  const tokenized = tokenizeForFts(raw);
+  const tokens = tokenized
+    .split(/\s+/)
+    .filter((t) => t.length > 0 && /[\p{L}\p{N}]/u.test(t));
   if (tokens.length === 0) return null;
   return tokens.map((t) => `'${t.replaceAll("'", "''")}'`).join(" & ");
 }
@@ -95,7 +96,7 @@ export async function searchKeyword(params: {
   queryParams.push(params.limit);
 
   const res = await params.client.query(
-    `WITH query AS (SELECT to_tsquery('${params.ftsConfig}', $1) AS q)
+    `WITH query AS (SELECT to_tsquery('simple', $1) AS q)
      SELECT id, path, source, start_line, end_line, text,
             ts_rank_cd(search_vec, query.q) AS rank
        FROM chunks, query

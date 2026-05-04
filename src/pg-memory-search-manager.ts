@@ -18,6 +18,7 @@ import { createPgPool, acquireWithSchema, type PgPool, type PgClient } from "./p
 import { ensureMemoryIndexSchema, ensureFtsTrigger, dropMemorySchema } from "./schema.js";
 import { searchVector } from "./search/vector.js";
 import { searchKeyword } from "./search/keyword.js";
+import { tokenizeForFts } from "./utils/tokenizer.js";
 import { mergeHybridResults } from "./search/hybrid.js";
 import {
   loadEmbeddingCache,
@@ -76,7 +77,7 @@ export class PgMemoryManager implements PgMemorySearchManager {
   constructor(config: PgMemoryConfig) {
     this.config = { ...config };
     this.embeddingProvider = config.embeddingProvider ?? null;
-    this.ftsConfig = config.ftsConfig ?? "english";
+    this.ftsConfig = config.ftsConfig ?? "simple";
     this.vectorDims = config.vectorDims ?? DEFAULT_VECTOR_DIMS;
     this.vectorEnabled = config.vectorEnabled !== false;
     this.hybridEnabled = config.hybridEnabled !== false;
@@ -337,6 +338,10 @@ export class PgMemoryManager implements PgMemorySearchManager {
             this.config.workspaceDir,
             this.config.extraPaths ?? [],
             this.chunkConfig,
+            {
+              extensions: this.config.extensions,
+              readers: this.config.readers,
+            },
           );
           if (files.length > 0) {
             await this.syncFiles(files, { force: true, progress: params?.progress });
@@ -474,40 +479,69 @@ export class PgMemoryManager implements PgMemorySearchManager {
       });
     }
 
-    // Insert chunks
+    // Batch insert chunks using UNNEST
     const now = Date.now();
-    for (let i = 0; i < file.chunks.length; i++) {
-      const chunk = file.chunks[i];
-      const emb = embeddings[i] ?? [];
+    if (file.chunks.length > 0) {
+      const ids: string[] = [];
+      const paths: string[] = [];
+      const sources: string[] = [];
+      const startLines: number[] = [];
+      const endLines: number[] = [];
+      const hashes: string[] = [];
+      const models: string[] = [];
+      const texts: string[] = [];
+      const searchTexts: string[] = [];
+      const embeddingJsons: string[] = [];
+      const timestamps: number[] = [];
+
+      for (let i = 0; i < file.chunks.length; i++) {
+        const chunk = file.chunks[i];
+        const emb = embeddings[i] ?? [];
+        ids.push(chunk.id);
+        paths.push(chunk.path);
+        sources.push(chunk.source);
+        startLines.push(chunk.startLine);
+        endLines.push(chunk.endLine);
+        hashes.push(chunk.hash);
+        models.push(chunk.model || providerModel);
+        texts.push(chunk.text);
+        searchTexts.push(tokenizeForFts(chunk.text));
+        embeddingJsons.push(JSON.stringify(emb));
+        timestamps.push(now);
+      }
 
       await client.query(
-        `INSERT INTO chunks (id, path, source, start_line, end_line, hash, model, text, embedding, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `INSERT INTO chunks (id, path, source, start_line, end_line, hash, model, text, search_text, embedding, updated_at)
+         SELECT * FROM UNNEST(
+           $1::text[], $2::text[], $3::text[], $4::int[], $5::int[],
+           $6::text[], $7::text[], $8::text[], $9::text[], $10::jsonb[], $11::bigint[]
+         )
          ON CONFLICT (id) DO UPDATE SET
-           text = EXCLUDED.text, embedding = EXCLUDED.embedding,
+           text = EXCLUDED.text, search_text = EXCLUDED.search_text,
+           embedding = EXCLUDED.embedding,
            hash = EXCLUDED.hash, model = EXCLUDED.model, updated_at = EXCLUDED.updated_at`,
-        [
-          chunk.id,
-          chunk.path,
-          chunk.source,
-          chunk.startLine,
-          chunk.endLine,
-          chunk.hash,
-          chunk.model || providerModel,
-          chunk.text,
-          JSON.stringify(emb),
-          now,
-        ],
+        [ids, paths, sources, startLines, endLines, hashes, models, texts, searchTexts, embeddingJsons, timestamps],
       );
 
-      // Insert vector if available
-      if (this.vectorAvailable && emb.length > 0) {
-        const vecLiteral = `[${emb.join(",")}]`;
-        await client.query(
-          `INSERT INTO chunks_vec (id, embedding) VALUES ($1, $2::vector)
-           ON CONFLICT (id) DO UPDATE SET embedding = EXCLUDED.embedding`,
-          [chunk.id, vecLiteral],
-        );
+      // Batch insert vectors if available
+      if (this.vectorAvailable) {
+        const vecIds: string[] = [];
+        const vecEmbeddings: string[] = [];
+        for (let i = 0; i < file.chunks.length; i++) {
+          const emb = embeddings[i] ?? [];
+          if (emb.length > 0) {
+            vecIds.push(file.chunks[i].id);
+            vecEmbeddings.push(`[${emb.join(",")}]`);
+          }
+        }
+        if (vecIds.length > 0) {
+          await client.query(
+            `INSERT INTO chunks_vec (id, embedding)
+             SELECT * FROM UNNEST($1::text[], $2::vector[])
+             ON CONFLICT (id) DO UPDATE SET embedding = EXCLUDED.embedding`,
+            [vecIds, vecEmbeddings],
+          );
+        }
       }
     }
   }
@@ -607,7 +641,7 @@ export class PgMemoryManager implements PgMemorySearchManager {
   // ─────────────────── file watching ───────────────────
 
   /**
-   * Start watching workspace for md file changes.
+   * Start watching workspace for file changes.
    * Requires workspaceDir to be set in config.
    * Changes are automatically synced to PG.
    */
@@ -622,6 +656,8 @@ export class PgMemoryManager implements PgMemorySearchManager {
       debounceMs: this.config.sync?.debounceMs ?? 1500,
       intervalMinutes: this.config.sync?.intervalMinutes ?? 0,
       chunkConfig: this.chunkConfig,
+      extensions: this.config.extensions,
+      readers: this.config.readers,
       onSync: async (files, reason, deleted) => {
         await this.ensureProviderInitialized();
         if (deleted && deleted.length > 0) {
@@ -659,7 +695,7 @@ export class PgMemoryManager implements PgMemorySearchManager {
   }
 
   /**
-   * Manually scan the workspace and sync all md files to PG.
+   * Manually scan the workspace and sync all supported files to PG.
    * Equivalent to openclaw's force sync.
    */
   async syncWorkspace(opts?: {
@@ -677,6 +713,10 @@ export class PgMemoryManager implements PgMemorySearchManager {
       this.config.workspaceDir,
       this.config.extraPaths,
       this.chunkConfig,
+      {
+        extensions: this.config.extensions,
+        readers: this.config.readers,
+      },
     );
     await this.syncFiles(files, { force: opts?.force, progress: opts?.progress });
   }

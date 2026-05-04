@@ -1,6 +1,7 @@
 import type { PgClient } from "./pg-client.js";
 import { quoteIdent } from "./pg-client.js";
 import { DEFAULT_VECTOR_DIMS } from "./types.js";
+import { tokenizeForFts } from "./utils/tokenizer.js";
 
 /**
  * Ensure the memory index schema exists in the current search_path schema.
@@ -17,7 +18,7 @@ export async function ensureMemoryIndexSchema(
   } = {},
 ): Promise<{ ftsAvailable: boolean; vectorAvailable: boolean }> {
   const dims = options.vectorDims ?? DEFAULT_VECTOR_DIMS;
-  const ftsConfig = options.ftsConfig ?? "english";
+  const ftsConfig = options.ftsConfig ?? "simple";
   const cacheEnabled = options.cacheEnabled ?? true;
   const vectorEnabled = options.vectorEnabled ?? true;
   const ftsEnabled = options.ftsEnabled ?? true;
@@ -127,17 +128,25 @@ export async function ensureMemoryIndexSchema(
       // pg_trgm for trigram-based search (replaces SQLite FTS5 trigram tokenizer)
       await client.query("CREATE EXTENSION IF NOT EXISTS pg_trgm;");
 
-      // Add tsvector column
+      // Add tsvector and tokenized text columns
       await client.query(`
         ALTER TABLE chunks
-          ADD COLUMN IF NOT EXISTS search_vec tsvector;
+          ADD COLUMN IF NOT EXISTS search_vec tsvector,
+          ADD COLUMN IF NOT EXISTS search_text TEXT NOT NULL DEFAULT '';
       `);
 
-      // Populate search_vec for existing rows
-      await client.query(`
-        UPDATE chunks SET search_vec = to_tsvector('${ftsConfig}', coalesce(text, ''))
-        WHERE search_vec IS NULL;
-      `);
+      // Populate search_text (tokenized) and search_vec for existing rows
+      // that have empty search_text. We fetch and re-tokenize in batches.
+      const stale = await client.query(
+        `SELECT id, text FROM chunks WHERE search_text = '' AND text != '' LIMIT 500`,
+      );
+      for (const row of stale.rows as Array<{ id: string; text: string }>) {
+        const tokenized = tokenizeForFts(row.text);
+        await client.query(
+          `UPDATE chunks SET search_text = $1, search_vec = to_tsvector('${ftsConfig}', $1) WHERE id = $2`,
+          [tokenized, row.id],
+        );
+      }
 
       // GIN index on tsvector
       await client.query(`
@@ -184,7 +193,7 @@ export async function ensureFtsTrigger(
   await client.query(`
     CREATE OR REPLACE FUNCTION ${funcName}() RETURNS trigger AS $$
     BEGIN
-      NEW.search_vec := to_tsvector('${ftsConfig}', coalesce(NEW.text, ''));
+      NEW.search_vec := to_tsvector('${ftsConfig}', coalesce(NEW.search_text, ''));
       RETURN NEW;
     END;
     $$ LANGUAGE plpgsql;
@@ -206,7 +215,7 @@ export async function ensureFtsTrigger(
 
   await client.query(`
     CREATE TRIGGER ${quoteIdent(triggerName)}
-      BEFORE INSERT OR UPDATE OF text ON ${quoteIdent(schema)}.chunks
+      BEFORE INSERT OR UPDATE OF search_text ON ${quoteIdent(schema)}.chunks
       FOR EACH ROW
       EXECUTE FUNCTION ${funcName}();
   `);

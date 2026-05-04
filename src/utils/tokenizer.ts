@@ -1,4 +1,5 @@
-import { Segment, useDefault } from "segmentit";
+import segmentit from "segmentit";
+const { Segment, useDefault } = segmentit;
 
 const segment = new Segment();
 useDefault(segment);

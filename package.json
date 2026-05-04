@@ -1,6 +1,6 @@
 {
   "name": "@omnitexts/pg-memo",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "license": "MIT",
   "description": "PostgreSQL-based memory search engine for AI agents",
   "type": "module",

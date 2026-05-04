@@ -1,14 +1,28 @@
 {
-  "name": "@pg-memo/core",
-  "version": "0.1.0",
+  "name": "@omnitexts/pg-memo",
+  "version": "0.1.1",
+  "license": "MIT",
   "description": "PostgreSQL-based memory search engine for AI agents",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./types": "./src/types.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "default": "./dist/types.js"
+    }
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
+    "prepublishOnly": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:check": "tsx scripts/db-check.ts"

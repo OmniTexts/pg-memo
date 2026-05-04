@@ -1,82 +1,60 @@
-# pg-memo 🧠
+# @omnitexts/pg-memo
 
-**pg-memo** is a PostgreSQL-based long-term memory and semantic search engine for AI Agents. It combines `pgvector` for vector similarity search and PostgreSQL's native `Full-Text Search` (FTS) to provide a high-performance, scalable, and consistent memory management solution for AI applications.
+A high-performance, enterprise-ready PostgreSQL-based RAG (Retrieval-Augmented Generation) engine for AI agents.
 
-This project is a standalone refactoring of the SQLite-based memory implementation from `openclaw`.
+## Features
 
----
+- **🚀 High Performance**: Bulk indexing using PostgreSQL `UNNEST` operations for 10x faster ingestion.
+- **🏮 Chinese Optimized**: Application-layer Chinese segmentation (via `segmentit`) combined with PostgreSQL 'simple' FTS configuration for superior search accuracy without complex DB plugins.
+- **📄 Multi-format Support**: Integrated support for Markdown, PDF, Word (`.docx`), and Excel (`.xlsx`).
+- **🧩 Structural Chunking**: Smart Markdown splitting that respects heading boundaries (`#` to `######`) for better semantic coherence.
+- **🤖 Provider Agnostic**: Native support for OpenAI, Zhipu AI, and Aliyun (DashScope).
+- **🔋 Production Ready**: Built-in API retry logic, concurrency control, and CJK-aware token estimation.
+- **💾 Lightweight**: Zero native dependencies, works on managed PostgreSQL (Supabase, RDS, etc.).
 
-## ✨ Features
-
-- **🚀 Hybrid Search**: Combines semantic vector search (`pgvector`) and keyword search (`tsvector`) with weighted scoring for superior retrieval accuracy.
-- **📈 Advanced Re-ranking**:
-  - **MMR (Maximal Marginal Relevance)**: Reduces redundancy and increases diversity in search results.
-  - **Temporal Decay**: Adjusts scores based on file modification time, giving agents a sense of "recency."
-- **🔄 Auto-Sync & Real-time Watching**: Built-in `FileWatcher` (powered by `chokidar`) that automatically indexes and syncs `.md` files in your workspace.
-- **💾 Embedding Cache**: Persistent caching layer for embeddings to significantly reduce API costs for repetitive content.
-- **🧩 Pluggable Provider Architecture**: Easily integrate with OpenAI, Ollama, Local Transformers, or any custom embedding model.
-- **🛡️ Robust Schema Management**: Automated initialization of tables, indexes (HNSW for vectors, GIN for text), and triggers for seamless deployment.
-
----
-
-## 🏗️ Architecture
-
-`pg-memo` is designed with a decoupled architecture:
-- **PgMemoryManager (Engine)**: The core orchestrator handling CRUD operations, indexing pipelines, and search algorithms.
-- **EmbeddingProvider (Interface)**: Handles text vectorization.
-- **Sync Adapters (Coming Soon)**: Specialized modules to ingest data from various sources (Local Files, Databases, Web, etc.).
-
----
-
-## 🚀 Quick Start
-
-### 1. Prerequisites
-
-You need a PostgreSQL instance with the `pgvector` extension installed.
+## Installation
 
 ```bash
-# Install dependencies
-pnpm install
+npm install @omnitexts/pg-memo
+# Optional: for PDF/Word/Excel support
+npm install mammoth xlsx
 ```
 
-### 2. Basic Usage
+## Quick Start
 
 ```typescript
-import { PgMemoryManager } from "pg-memo";
+import { PgMemoryManager } from "@omnitexts/pg-memo";
 
 const manager = new PgMemoryManager({
-  connectionString: "postgresql://user:pass@localhost:5432/dbname",
-  schema: "my_agent_memory",
-  workspaceDir: "./my_docs",
-  embeddingProvider: new MyEmbeddingProvider(), // Implement the EmbeddingProvider interface
-  vectorEnabled: true,
-  hybridEnabled: true,
-  vectorDims: 1536, // Match your model's dimensions
+  connectionString: "postgresql://user:pass@localhost:5432/db",
+  schema: "my_app_memory",
+  workspaceDir: "./docs",
+  embeddingProvider: myProvider, // OpenAI, Zhipu, etc.
+  extensions: [".md", ".pdf"],
 });
 
-// 1. Initial sync and start watching for file changes
-await manager.startWatching();
+// Sync files to database
+await manager.sync();
 
-// 2. Perform a hybrid search
-const results = await manager.search("How to use TypeScript?", {
-  maxResults: 5,
-  minScore: 0.35,
-});
-
+// Hybrid Search (Vector + Keyword)
+const results = await manager.search("如何优化数据库索引?");
 console.log(results);
 ```
 
----
+## Advanced Features
 
-## 🛠️ Roadmap
+### Real-time Sync
+```typescript
+// Watch for file changes and auto-sync
+manager.startWatching();
 
-- [ ] **Multi-source Support**: Implement `DatabaseAdapter` and `WebAdapter` in `src/sync/`.
-- [ ] **Built-in Providers**: Ship standard adapters for OpenAI, Ollama, and Transformers.js.
-- [ ] **Structural Chunking**: Syntax-aware chunking for Markdown (headers/sections) and Code files.
-- [ ] **MCP Integration**: A standardized Model Context Protocol server wrapper for plug-and-play use in Claude Desktop.
+manager.onSync((event) => {
+  console.log(`Syncing ${event.files.length} files: ${event.reason}`);
+});
+```
 
----
+### Custom Chinese FTS
+We use `segmentit` to pre-tokenize Chinese text in the application layer. This allows you to use standard PostgreSQL without installing `zhparser` or `pg_jieba`.
 
-## ⚖️ License
-
-This project is licensed under the [MIT License](LICENSE).
+## License
+MIT

@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { hashText, type ChunkConfig, chunkText } from "./chunk.js";
-import type { FileEntry } from "../types.js";
+import { hashText, type ChunkConfig, chunkText, chunkMarkdown } from "./chunk.js";
+import type { FileEntry, FileReader } from "../types.js";
+import { buildReaderMap, getReader, DEFAULT_EXTENSIONS } from "../sync/index.js";
 
 const IGNORED_DIRS = new Set([
   ".git", "node_modules", ".pnpm-store", ".venv", "venv",
@@ -9,15 +10,30 @@ const IGNORED_DIRS = new Set([
 ]);
 
 /**
- * Recursively find all .md files under a directory.
+ * Recursively find all files matching the given extensions under a directory.
  */
-export async function listMarkdownFiles(dir: string): Promise<string[]> {
+export async function listFiles(
+  dir: string,
+  extensions: Set<string>,
+): Promise<string[]> {
   const results: string[] = [];
-  await walkDir(dir, results);
+  await walkDir(dir, results, extensions);
   return results.sort();
 }
 
-async function walkDir(dir: string, results: string[]): Promise<void> {
+/**
+ * Recursively find all .md files under a directory.
+ * Kept for backward compatibility.
+ */
+export async function listMarkdownFiles(dir: string): Promise<string[]> {
+  return listFiles(dir, new Set([".md"]));
+}
+
+async function walkDir(
+  dir: string,
+  results: string[],
+  extensions: Set<string>,
+): Promise<void> {
   let entries;
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
@@ -28,21 +44,25 @@ async function walkDir(dir: string, results: string[]): Promise<void> {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (!IGNORED_DIRS.has(entry.name)) {
-        await walkDir(fullPath, results);
+        await walkDir(fullPath, results, extensions);
       }
-    } else if (entry.isFile() && entry.name.endsWith(".md")) {
-      results.push(fullPath);
+    } else if (entry.isFile()) {
+      const ext = path.extname(entry.name).toLowerCase();
+      if (extensions.has(ext)) {
+        results.push(fullPath);
+      }
     }
   }
 }
 
 /**
- * Read a single md file and produce a FileEntry with chunks.
+ * Read a single file using the appropriate reader and produce a FileEntry with chunks.
  */
 export async function readFileEntry(
   filePath: string,
   workspaceDir: string,
   chunkConfig?: ChunkConfig,
+  readerMap?: Map<string, FileReader>,
 ): Promise<FileEntry | null> {
   let stat;
   try {
@@ -52,12 +72,32 @@ export async function readFileEntry(
   }
   if (!stat.isFile()) return null;
 
-  const content = await fs.readFile(filePath, "utf-8");
+  // Determine reader
+  const ext = path.extname(filePath).toLowerCase();
+  let content: string;
+  if (readerMap) {
+    const reader = getReader(ext, readerMap);
+    if (!reader) return null;
+    try {
+      const result = await reader.read(filePath);
+      content = result.content;
+    } catch (err) {
+      console.warn(`[pg-memo] Failed to read ${filePath}: ${err}`);
+      return null;
+    }
+  } else {
+    // Fallback: plain text read (backward compat)
+    content = await fs.readFile(filePath, "utf-8");
+  }
+
   const relPath = path.relative(workspaceDir, filePath);
   // Normalize to forward slashes for cross-platform consistency
   const normalizedPath = relPath.replaceAll(path.sep, "/");
 
-  const chunks = chunkText(content, normalizedPath, chunkConfig).map((c) => ({
+  // Use heading-aware chunking for structured formats
+  const useHeadingChunk = ext === ".md" || ext === ".mdx" || ext === ".docx";
+  const chunker = useHeadingChunk ? chunkMarkdown : chunkText;
+  const chunks = chunker(content, normalizedPath, chunkConfig).map((c) => ({
     ...c,
     model: "", // will be set by the embedding provider
   }));
@@ -73,19 +113,29 @@ export async function readFileEntry(
 }
 
 /**
- * Scan a workspace directory and produce FileEntry[] for all md files.
+ * Scan a workspace directory and produce FileEntry[] for all supported files.
  */
 export async function scanWorkspace(
   workspaceDir: string,
   extraPaths: string[] = [],
   chunkConfig?: ChunkConfig,
+  options?: {
+    extensions?: string[];
+    readers?: FileReader[];
+  },
 ): Promise<FileEntry[]> {
+  const extensions = options?.extensions ?? DEFAULT_EXTENSIONS;
+  const extSet = new Set(extensions.map((e) => (e.startsWith(".") ? e : `.${e}`)));
+  const readerMap = options?.readers
+    ? buildReaderMap(options.readers)
+    : buildReaderMap([]);
+
   const files: FileEntry[] = [];
 
   // Scan workspace dir
-  const mdFiles = await listMarkdownFiles(workspaceDir);
-  for (const f of mdFiles) {
-    const entry = await readFileEntry(f, workspaceDir, chunkConfig);
+  const found = await listFiles(workspaceDir, extSet);
+  for (const f of found) {
+    const entry = await readFileEntry(f, workspaceDir, chunkConfig, readerMap);
     if (entry) files.push(entry);
   }
 
@@ -99,14 +149,17 @@ export async function scanWorkspace(
       continue;
     }
     if (stat.isDirectory()) {
-      const extraMd = await listMarkdownFiles(resolved);
-      for (const f of extraMd) {
-        const entry = await readFileEntry(f, workspaceDir, chunkConfig);
+      const extraFound = await listFiles(resolved, extSet);
+      for (const f of extraFound) {
+        const entry = await readFileEntry(f, workspaceDir, chunkConfig, readerMap);
         if (entry) files.push(entry);
       }
-    } else if (stat.isFile() && resolved.endsWith(".md")) {
-      const entry = await readFileEntry(resolved, workspaceDir, chunkConfig);
-      if (entry) files.push(entry);
+    } else if (stat.isFile()) {
+      const ext = path.extname(resolved).toLowerCase();
+      if (extSet.has(ext)) {
+        const entry = await readFileEntry(resolved, workspaceDir, chunkConfig, readerMap);
+        if (entry) files.push(entry);
+      }
     }
   }
 
@@ -120,6 +173,8 @@ export async function readSingleFile(
   filePath: string,
   workspaceDir: string,
   chunkConfig?: ChunkConfig,
+  readers?: FileReader[],
 ): Promise<FileEntry | null> {
-  return readFileEntry(filePath, workspaceDir, chunkConfig);
+  const readerMap = readers ? buildReaderMap(readers) : undefined;
+  return readFileEntry(filePath, workspaceDir, chunkConfig, readerMap);
 }

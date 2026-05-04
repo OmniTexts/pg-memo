@@ -1,7 +1,8 @@
 import path from "node:path";
 import chokidar, { type FSWatcher } from "chokidar";
 import { readSingleFile } from "../utils/file-reader.js";
-import type { FileEntry, ChunkConfig } from "../types.js";
+import type { FileEntry, ChunkConfig, FileReader } from "../types.js";
+import { DEFAULT_EXTENSIONS } from "../sync/index.js";
 
 const IGNORED_DIRS = new Set([
   ".git", "node_modules", ".pnpm-store", ".venv", "venv",
@@ -19,6 +20,10 @@ export type FileWatcherOptions = {
   intervalMinutes?: number;
   /** Chunking config */
   chunkConfig?: ChunkConfig;
+  /** Supported file extensions (default [".md"]) */
+  extensions?: string[];
+  /** Custom file readers */
+  readers?: FileReader[];
   /** Callback when files are ready to sync */
   onSync: (files: FileEntry[], reason: string, deleted?: string[]) => Promise<void>;
   /** Logger */
@@ -42,6 +47,7 @@ export class FileWatcher {
     Pick<FileWatcherOptions, "workspaceDir" | "extraPaths" | "debounceMs" | "intervalMinutes" | "onSync" | "log">
   > &
     FileWatcherOptions;
+  private readonly extSet: Set<string>;
 
   constructor(opts: FileWatcherOptions) {
     this.opts = {
@@ -50,9 +56,13 @@ export class FileWatcher {
       debounceMs: opts.debounceMs ?? 1500,
       intervalMinutes: opts.intervalMinutes ?? 0,
       chunkConfig: opts.chunkConfig,
+      extensions: opts.extensions,
+      readers: opts.readers,
       onSync: opts.onSync,
       log: opts.log ?? (() => {}),
     };
+    const exts = opts.extensions ?? DEFAULT_EXTENSIONS;
+    this.extSet = new Set(exts.map((e) => (e.startsWith(".") ? e : `.${e}`)));
   }
 
   /** Start watching for file changes and optionally periodic sync */
@@ -83,7 +93,7 @@ export class FileWatcher {
 
     const markDirty = (filePath: string) => {
       if (this.closed) return;
-      if (!filePath.endsWith(".md")) return;
+      if (!this.extSet.has(path.extname(filePath).toLowerCase())) return;
       // Normalize to workspace-relative path
       const relPath = path
         .relative(this.opts.workspaceDir, filePath)
@@ -96,7 +106,7 @@ export class FileWatcher {
     this.watcher.on("change", markDirty);
     this.watcher.on("unlink", (filePath) => {
       if (this.closed) return;
-      if (!filePath.endsWith(".md")) return;
+      if (!this.extSet.has(path.extname(filePath).toLowerCase())) return;
       const relPath = path
         .relative(this.opts.workspaceDir, filePath)
         .replaceAll(path.sep, "/");
@@ -104,7 +114,7 @@ export class FileWatcher {
       this.scheduleSync();
     });
 
-    this.opts.log("info", `Watching ${watchPaths.length} paths for .md changes`);
+    this.opts.log("info", `Watching ${watchPaths.length} paths for [${[...this.extSet].join(", ")}] changes`);
 
     // Periodic sync
     if (this.opts.intervalMinutes > 0) {
@@ -133,7 +143,7 @@ export class FileWatcher {
     }
   }
 
-  /** Manually trigger a full sync of all md files */
+  /** Manually trigger a full sync of all supported files */
   async runFullSync(reason = "manual"): Promise<void> {
     if (this.syncing) return;
     this.syncing = true;
@@ -143,6 +153,10 @@ export class FileWatcher {
         this.opts.workspaceDir,
         this.opts.extraPaths,
         this.opts.chunkConfig,
+        {
+          extensions: this.opts.extensions,
+          readers: this.opts.readers,
+        },
       );
       this.dirtyFiles.clear();
       this.deletedFiles.clear();
@@ -184,6 +198,7 @@ export class FileWatcher {
           absPath,
           this.opts.workspaceDir,
           this.opts.chunkConfig,
+          this.opts.readers,
         );
         if (entry) entries.push(entry);
       }

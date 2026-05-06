@@ -494,7 +494,19 @@ export class PgMemoryManager implements PgMemorySearchManager {
       const embeddingJsons: string[] = [];
       const timestamps: number[] = [];
 
+      // Deduplicate IDs in the batch to prevent Postgres error
+      const uniqueIds = new Set<string>();
+      const dedupedIndices: number[] = [];
       for (let i = 0; i < file.chunks.length; i++) {
+        if (!uniqueIds.has(file.chunks[i].id)) {
+          uniqueIds.add(file.chunks[i].id);
+          dedupedIndices.push(i);
+        } else {
+          console.warn(`[pg-memo] Duplicate chunk ID found in batch for ${file.path}: ${file.chunks[i].id}`);
+        }
+      }
+
+      for (const i of dedupedIndices) {
         const chunk = file.chunks[i];
         const emb = embeddings[i] ?? [];
         ids.push(chunk.id);
@@ -527,7 +539,7 @@ export class PgMemoryManager implements PgMemorySearchManager {
       if (this.vectorAvailable) {
         const vecIds: string[] = [];
         const vecEmbeddings: string[] = [];
-        for (let i = 0; i < file.chunks.length; i++) {
+        for (const i of dedupedIndices) {
           const emb = embeddings[i] ?? [];
           if (emb.length > 0) {
             vecIds.push(file.chunks[i].id);

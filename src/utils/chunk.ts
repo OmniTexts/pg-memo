@@ -150,6 +150,30 @@ export function chunkMarkdown(
 
       for (const para of paragraphs) {
         const pTokens = estimateTokens(para.text);
+        
+        // NEW: If a single paragraph is larger than maxTokens, we must split it further
+        if (pTokens > maxTokens) {
+          // If we have pending lines, emit them first
+          if (paraLines.length > 0) {
+            const endLine = paraStart + paraLines.length - 1;
+            chunks.push(makeChunk(source, paraStart, endLine, paraLines.join("\n")));
+            paraLines = [];
+            paraTokens = 0;
+          }
+          // Sub-chunk the giant paragraph using line-based logic
+          const subChunks = chunkText(para.text, source, config);
+          for (const sc of subChunks) {
+            // Adjust line numbers relative to the paragraph's start
+            chunks.push({
+              ...sc,
+              startLine: para.startLine + sc.startLine - 1,
+              endLine: para.startLine + sc.endLine - 1
+            });
+          }
+          paraStart = para.startLine + para.lines.length;
+          continue;
+        }
+
         if (paraTokens + pTokens > maxTokens && paraLines.length > 0) {
           const endLine = paraStart + paraLines.length - 1;
           chunks.push(makeChunk(source, paraStart, endLine, paraLines.join("\n")));

@@ -17,7 +17,7 @@ export const pdfReader: FileReader = {
       const text = content.items
         .map((item: any) => item.str)
         .join(" ");
-      parts.push(text);
+      parts.push(`[Page ${i}]\n${text}`);
     }
 
     return {

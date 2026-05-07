@@ -68,5 +68,8 @@ We've bridged Node.js with a Python-based extraction engine that:
 manager.startWatching(); // Auto-sync on file changes with debounce support
 ```
 
+## 📚 Documentation
+- [Database Schema & Multimedia Storage](./docs/database-schema.md)
+
 ## 📄 License
 MIT

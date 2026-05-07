@@ -1,8 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { hashText, type ChunkConfig, chunkText, chunkMarkdown } from "./chunk.js";
+import { hashText, makeChunkId, type ChunkConfig, chunkText, chunkMarkdown } from "./chunk.js";
 import type { FileEntry, FileReader } from "../types.js";
 import { buildReaderMap, getReader, DEFAULT_EXTENSIONS } from "../sync/index.js";
+import { tokenizeForFts } from "./tokenizer.js";
 
 const IGNORED_DIRS = new Set([
   ".git", "node_modules", ".pnpm-store", ".venv", "venv",
@@ -61,9 +62,9 @@ async function walkDir(
 export async function readFileEntry(
   filePath: string,
   workspaceDir: string,
-  chunkConfig?: ChunkConfig,
+  chunkConfig: ChunkConfig,
   readerMap?: Map<string, FileReader>,
-  options?: { media?: any }
+  options?: { media?: any; audio?: any }
 ): Promise<FileEntry | null> {
   let stat;
   try {
@@ -73,15 +74,17 @@ export async function readFileEntry(
   }
   if (!stat.isFile()) return null;
 
-  // Determine reader
-  const ext = path.extname(filePath).toLowerCase();
   let content: string;
+  let metadata: Record<string, any> | undefined;
+  const ext = path.extname(filePath).toLowerCase();
+
   if (readerMap) {
     const reader = getReader(ext, readerMap);
     if (!reader) return null;
     try {
-      const result = await reader.read(filePath, options);
+      const result = await reader.read(filePath, workspaceDir, chunkConfig, options);
       content = result.content;
+      metadata = result.metadata;
     } catch (err) {
       console.warn(`[pg-memo] Failed to read ${filePath}: ${err}`);
       return null;
@@ -98,18 +101,26 @@ export async function readFileEntry(
   // Use heading-aware chunking for structured formats
   const useHeadingChunk = ext === ".md" || ext === ".mdx" || ext === ".docx";
   const chunker = useHeadingChunk ? chunkMarkdown : chunkText;
-  const chunks = chunker(content, normalizedPath, chunkConfig).map((c) => ({
-    ...c,
-    model: "", // will be set by the embedding provider
-  }));
+  const chunks = chunker(content, chunkConfig);
 
   return {
     path: normalizedPath,
+    content,
     hash: hashText(content),
     mtime: Math.floor(stat.mtimeMs),
     size: stat.size,
     source: "memory" as const,
-    chunks,
+    metadata,
+    chunks: chunks.map((c, i) => ({
+      id: makeChunkId(normalizedPath, c.startLine, c.endLine),
+      path: normalizedPath,
+      source: "memory" as const,
+      text: c.text,
+      startLine: c.startLine,
+      endLine: c.endLine,
+      hash: hashText(c.text),
+      model: "",
+    })),
   };
 }
 
@@ -119,26 +130,31 @@ export async function readFileEntry(
 export async function scanWorkspace(
   workspaceDir: string,
   extraPaths: string[] = [],
-  chunkConfig?: ChunkConfig,
+  chunkConfig: ChunkConfig,
   options?: {
     extensions?: string[];
     readers?: FileReader[];
     media?: any;
+    audio?: any;
   },
 ): Promise<FileEntry[]> {
-  const extensions = options?.extensions ?? DEFAULT_EXTENSIONS;
-  const extSet = new Set(extensions.map((e) => (e.startsWith(".") ? e : `.${e}`)));
-  const readerMap = options?.readers
-    ? buildReaderMap(options.readers)
-    : buildReaderMap([]);
+  const exts = options?.extensions ?? DEFAULT_EXTENSIONS;
+  const extSet = new Set(exts.map((e) => (e.startsWith(".") ? e : `.${e}`)));
+  const readerMap = buildReaderMap(options?.readers ?? []);
 
-  const files: FileEntry[] = [];
+  const entries: FileEntry[] = [];
 
   // Scan workspace dir
+  console.log(`[scanWorkspace] Scanning ${workspaceDir} for extensions: ${[...extSet].join(', ')}`);
   const found = await listFiles(workspaceDir, extSet);
+  console.log(`[scanWorkspace] Found ${found.length} files total.`);
   for (const f of found) {
-    const entry = await readFileEntry(f, workspaceDir, chunkConfig, readerMap, options);
-    if (entry) files.push(entry);
+    console.log(`[scanWorkspace] Processing: ${f}`);
+    const entry = await readFileEntry(f, workspaceDir, chunkConfig, readerMap, {
+      media: options?.media,
+      audio: options?.audio,
+    });
+    if (entry) entries.push(entry);
   }
 
   // Scan extra paths
@@ -154,18 +170,18 @@ export async function scanWorkspace(
       const extraFound = await listFiles(resolved, extSet);
       for (const f of extraFound) {
         const entry = await readFileEntry(f, workspaceDir, chunkConfig, readerMap, options);
-        if (entry) files.push(entry);
+        if (entry) entries.push(entry);
       }
     } else if (stat.isFile()) {
       const ext = path.extname(resolved).toLowerCase();
       if (extSet.has(ext)) {
         const entry = await readFileEntry(resolved, workspaceDir, chunkConfig, readerMap, options);
-        if (entry) files.push(entry);
+        if (entry) entries.push(entry);
       }
     }
   }
 
-  return files;
+  return entries;
 }
 
 /**
@@ -174,9 +190,9 @@ export async function scanWorkspace(
 export async function readSingleFile(
   filePath: string,
   workspaceDir: string,
-  chunkConfig?: ChunkConfig,
+  chunkConfig: ChunkConfig = { tokens: 400, overlap: 80 },
   readers?: FileReader[],
-  options?: { media?: any }
+  options?: { media?: any; audio?: any }
 ): Promise<FileEntry | null> {
   const readerMap = readers ? buildReaderMap(readers) : undefined;
   return readFileEntry(filePath, workspaceDir, chunkConfig, readerMap, options);

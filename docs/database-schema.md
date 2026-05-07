@@ -65,3 +65,21 @@ When processing multimodal documents (like PDFs), `pg-memo` extracts embedded im
 #### Cloud Mode (Cloudflare R2 / S3)
 - **Automatic Upload**: If `media.s3` credentials are provided, images are automatically uploaded to the cloud bucket.
 - **Base URL**: You can set a `media.baseUrl` (e.g., `https://cdn.example.com/`) to ensure images are accessible from anywhere.
+
+---
+
+## 3. Audio Transcription Pipeline (Podcast/Audio)
+
+`pg-memo` integrates the **Xiaomi MiMo V2.5 ASR** engine to transform long-form audio into a searchable knowledge base.
+
+### 3.1 Automated Transcription Flow
+1. **File Scanning**: The system automatically scans `workspaceDir` for `.mp3`, `.m4a`, and `.wav` files.
+2. **ASR Processing**: Uses the MiMo model for speech-to-text, with optional **Speaker Diarization** enabled.
+3. **Transcript Persistence**: Generated Markdown transcripts are stored in a hidden `.transcripts/` directory, containing timestamps, speaker labels, and structured content tables.
+4. **Semantic Indexing**: Transcribed text is automatically chunked and indexed with vector embeddings, making it searchable via natural language queries.
+
+### 3.2 Speaker Diarization
+When `audio.diarization: true` is enabled, transcripts are rendered as standard Markdown tables:
+- **Timestamps**: Precisely locate audio segments.
+- **Role Labels**: e.g., `Speaker 1`, `Speaker 2`.
+- **Retrieval Enhancement**: Search results return specific conversation snippets with attribution, significantly improving the utility of podcast indexing.

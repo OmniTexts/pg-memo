@@ -1,4 +1,5 @@
-export { PgMemoryManager, makeChunkId, hashText } from "./pg-memory-search-manager.js";
+export { PgMemoryManager } from "./pg-memory-search-manager.js";
+export { makeChunkId, hashText } from "./utils/chunk.js";
 
 export type {
   PgMemorySearchManager,
@@ -14,6 +15,7 @@ export type {
   ChunkConfig,
   SearchRowResult,
   FileReader,
+  AudioConfig,
 } from "./types.js";
 
 export { DEFAULT_VECTOR_DIMS } from "./types.js";

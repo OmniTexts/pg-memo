@@ -8,9 +8,9 @@ A high-performance, enterprise-ready PostgreSQL-based RAG (Retrieval-Augmented G
 - **🖼️ Vision-Enhanced Indexing**: Automatically converts PDF images, hexagrams, and symbols into searchable text descriptions via VLM.
 - **📦 Smart Media Storage**: Supports both local persistence and **Cloudflare R2 / S3-compatible** cloud storage for extracted images.
 - **⚡ High Performance**: Bulk indexing using PostgreSQL `UNNEST` operations for 10x faster ingestion.
-- **🏮 Chinese Optimized**: Application-layer Chinese segmentation (via `segmentit`) combined with PostgreSQL 'simple' FTS configuration.
-- **📄 Multi-format Support**: Native support for Markdown, PDF, Word (`.docx`), and Excel (`.xlsx`).
-- **🧩 Structural Chunking**: Heading-aware splitting for better semantic coherence.
+- **🎙️ Searchable Podcasts**: Native support for **Xiaomi MiMo V2.5 ASR** to transcribe audio with speaker identification (diarization).
+- **🧩 Structural Chunking**: Heading-aware splitting and timestamp-based audio indexing for better semantic coherence.
+- **📄 Multi-format Support**: Native support for Markdown, PDF, Word (`.docx`), Excel (`.xlsx`), and Audio (`.mp3`, `.m4a`, `.wav`).
 - **🤖 Provider Agnostic**: Native support for OpenAI, Zhipu AI, and Aliyun (DashScope).
 - **💾 Lightweight**: Zero native dependencies, works on managed PostgreSQL (Supabase, RDS, etc.).
 
@@ -41,8 +41,14 @@ const manager = new PgMemoryManager({
       bucket: "my-bucket",
       endpoint: "https://<id>.r2.cloudflarestorage.com",
       accessKeyId: "...",
-      secretAccessKey: "..."
     }
+  },
+  // Audio Transcription Configuration
+  audio: {
+    provider: 'mimo',
+    apiKey: process.env.XIAOMI_API_KEY,
+    diarization: true, // Enable multi-speaker identification
+    rootPath: "./media/.transcripts" // Storage for generated transcripts
   }
 });
 
@@ -63,7 +69,13 @@ We've bridged Node.js with a Python-based extraction engine that:
 - **Local Mode**: Automatically saves images to a `media/` subfolder relative to your files.
 - **Cloud Mode**: Seamlessly uploads to Cloudflare R2 or S3, enabling global accessibility for your agent's knowledge base.
 
-### 3. Real-time Sync & Watch
+### 3. AI-Powered Audio Transcription (MiMo Integration)
+We've integrated the **Xiaomi MiMo V2.5** multimodal engine to handle long-form audio:
+- **Speaker Diarization**: Automatically distinguishes between different participants in a podcast.
+- **Timestamped Indexing**: Keeps context of when things were said, allowing the agent to cite specific time ranges.
+- **Automated Pipeline**: Just drop audio files into your workspace; `pg-memo` handles transcription and semantic indexing in the background.
+
+### 4. Real-time Sync & Watch
 ```typescript
 manager.startWatching(); // Auto-sync on file changes with debounce support
 ```

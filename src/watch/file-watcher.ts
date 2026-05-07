@@ -26,6 +26,8 @@ export type FileWatcherOptions = {
   readers?: FileReader[];
   /** Media/Image storage configuration */
   media?: any;
+  /** Audio transcription configuration */
+  audio?: any;
   /** Callback when files are ready to sync */
   onSync: (files: FileEntry[], reason: string, deleted?: string[]) => Promise<void>;
   /** Logger */
@@ -61,6 +63,7 @@ export class FileWatcher {
       extensions: opts.extensions,
       readers: opts.readers,
       media: opts.media,
+      audio: opts.audio,
       onSync: opts.onSync,
       log: opts.log ?? (() => {}),
     };
@@ -155,11 +158,12 @@ export class FileWatcher {
       const files = await scanWorkspace(
         this.opts.workspaceDir,
         this.opts.extraPaths,
-        this.opts.chunkConfig,
+        this.opts.chunkConfig ?? { tokens: 400, overlap: 80 },
         {
           extensions: this.opts.extensions,
           readers: this.opts.readers,
           media: this.opts.media,
+          audio: this.opts.audio,
         },
       );
       this.dirtyFiles.clear();
@@ -201,9 +205,9 @@ export class FileWatcher {
         const entry = await readSingleFile(
           absPath,
           this.opts.workspaceDir,
-          this.opts.chunkConfig,
+          this.opts.chunkConfig ?? { tokens: 400, overlap: 80 },
           this.opts.readers,
-          { media: this.opts.media }
+          { media: this.opts.media, audio: this.opts.audio }
         );
         if (entry) entries.push(entry);
       }

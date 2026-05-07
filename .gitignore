@@ -24,3 +24,9 @@ coverage/
 scratch/
 
 media/
+ 
+# Audio fixtures and transcripts
+**/*.m4a
+**/*.mp3
+**/*.wav
+**/.transcripts/

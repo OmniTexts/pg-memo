@@ -3,11 +3,13 @@ import { textReader } from "./text-reader.js";
 import { pdfReader } from "./pdf-reader.js";
 import { docxReader } from "./docx-reader.js";
 import { xlsxReader } from "./xlsx-reader.js";
+import { audioReader } from "./audio-reader.js";
 
 export { textReader } from "./text-reader.js";
 export { pdfReader } from "./pdf-reader.js";
 export { docxReader } from "./docx-reader.js";
 export { xlsxReader } from "./xlsx-reader.js";
+export { audioReader } from "./audio-reader.js";
 
 /**
  * Build a reader lookup map from a list of FileReader adapters.
@@ -42,7 +44,7 @@ export function getReader(
 }
 
 /** Default supported extensions when none configured */
-export const DEFAULT_EXTENSIONS = [".md"];
+export const DEFAULT_EXTENSIONS = [".md", ".pdf", ".docx", ".xlsx", ".mp3", ".m4a", ".wav"];
 
 /** All built-in readers (for auto-registration) */
 export const builtinReaders: FileReader[] = [
@@ -50,4 +52,5 @@ export const builtinReaders: FileReader[] = [
   pdfReader,
   docxReader,
   xlsxReader,
+  audioReader,
 ];

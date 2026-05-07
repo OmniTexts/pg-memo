@@ -5,15 +5,17 @@ export type MemorySource = "memory" | "sessions";
  * File reader adapter — extracts plain text from a specific file format.
  * Register custom readers via PgMemoryConfig.readers.
  */
-export type FileReader = {
+export interface FileReader {
   /** File extensions this reader handles (e.g. [".pdf"]) */
   extensions: string[];
   /** Extract text content from a file */
   read(
     filePath: string,
-    options?: { media?: PgMemoryConfig["media"] }
-  ): Promise<{ content: string; metadata?: Record<string, unknown> }>;
-};
+    workspaceDir: string,
+    chunkConfig: ChunkConfig,
+    options?: { media?: MediaConfig; audio?: AudioConfig },
+  ): Promise<{ content: string; metadata?: Record<string, any> }>;
+}
 
 /** Search result, compatible with openclaw's MemorySearchResult */
 export type MemorySearchResult = {
@@ -145,20 +147,34 @@ export type PgMemoryConfig = {
     intervalMinutes?: number;
   };
   /** Media/Image storage configuration */
-  media?: {
-    /** Folder to save images locally (used as temp dir for cloud uploads) */
-    rootPath?: string;
-    /** URL prefix for images in markdown (e.g. your R2 public domain) */
-    baseUrl?: string;
-    /** Cloudflare R2 / S3 configuration */
-    s3?: {
-      bucket: string;
-      endpoint: string;
-      accessKeyId: string;
-      secretAccessKey: string;
-    };
-  };
+  media?: MediaConfig;
+  /** Audio transcription configuration */
+  audio?: AudioConfig;
 };
+
+export interface MediaConfig {
+  /** Folder to save images locally (used as temp dir for cloud uploads) */
+  rootPath?: string;
+  /** URL prefix for images in markdown (e.g. your R2 public domain) */
+  baseUrl?: string;
+  /** Cloudflare R2 / S3 configuration */
+  s3?: S3Config;
+}
+
+export interface AudioConfig {
+  rootPath?: string; // Path to store generated transcripts
+  provider: 'mimo' | 'whisper' | 'none';
+  apiKey?: string;
+  diarization?: boolean; // Whether to separate speakers
+  concurrency?: number; // How many chunks to process in parallel
+}
+
+export interface S3Config {
+  bucket: string;
+  endpoint: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+}
 
 export type ChunkConfig = { tokens: number; overlap: number };
 
@@ -169,6 +185,8 @@ export type FileEntry = {
   mtime: number;
   size: number;
   source: MemorySource;
+  content: string;
+  metadata?: Record<string, any>;
   /** Chunked text segments */
   chunks: ChunkEntry[];
 };

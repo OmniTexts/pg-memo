@@ -20,6 +20,7 @@ import { searchVector } from "./search/vector.js";
 import { searchKeyword } from "./search/keyword.js";
 import { tokenizeForFts } from "./utils/tokenizer.js";
 import { mergeHybridResults } from "./search/hybrid.js";
+import { makeChunkId, hashText } from "./utils/chunk.js";
 import {
   loadEmbeddingCache,
   upsertEmbeddingCache,
@@ -342,6 +343,7 @@ export class PgMemoryManager implements PgMemorySearchManager {
               extensions: this.config.extensions,
               readers: this.config.readers,
               media: this.config.media,
+              audio: this.config.audio,
             },
           );
           if (files.length > 0) {
@@ -672,6 +674,7 @@ export class PgMemoryManager implements PgMemorySearchManager {
       extensions: this.config.extensions,
       readers: this.config.readers,
       media: this.config.media,
+      audio: this.config.audio,
       onSync: async (files, reason, deleted) => {
         await this.ensureProviderInitialized();
         if (deleted && deleted.length > 0) {
@@ -746,18 +749,4 @@ export class PgMemoryManager implements PgMemorySearchManager {
       this.pool = null;
     }
   }
-}
-
-/** Helper: generate a unique chunk ID */
-export function makeChunkId(path: string, startLine: number, endLine: number): string {
-  return crypto
-    .createHash("sha256")
-    .update(`${path}:${startLine}:${endLine}`)
-    .digest("hex")
-    .slice(0, 24);
-}
-
-/** Helper: hash text content */
-export function hashText(text: string): string {
-  return crypto.createHash("sha256").update(text).digest("hex");
 }

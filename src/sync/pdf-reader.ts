@@ -6,7 +6,12 @@ import { uploadImagesToS3 } from "../utils/s3-storage.js";
 
 export const pdfReader: FileReader = {
   extensions: [".pdf"],
-  async read(filePath: string, options?: { media?: PgMemoryConfig["media"] }) {
+  async read(
+    filePath: string,
+    workspaceDir: string,
+    chunkConfig: any,
+    options?: { media?: PgMemoryConfig["media"] }
+  ) {
     // 1. Try Python Advanced Extraction first (with media persistence)
     const mediaDir = options?.media?.rootPath || path.join(path.dirname(filePath), "media");
     const baseUrl = options?.media?.baseUrl || "media/";

@@ -1,26 +1,30 @@
 # @omnitexts/pg-memo
 
-A high-performance, enterprise-ready PostgreSQL-based RAG (Retrieval-Augmented Generation) engine for AI agents.
+A high-performance, enterprise-ready PostgreSQL-based RAG (Retrieval-Augmented Generation) engine for AI agents, now featuring **Multimodal Knowledge Extraction**.
 
-## Features
+## 🚀 Key Features
 
-- **🚀 High Performance**: Bulk indexing using PostgreSQL `UNNEST` operations for 10x faster ingestion.
-- **🏮 Chinese Optimized**: Application-layer Chinese segmentation (via `segmentit`) combined with PostgreSQL 'simple' FTS configuration for superior search accuracy without complex DB plugins.
-- **📄 Multi-format Support**: Integrated support for Markdown, PDF, Word (`.docx`), and Excel (`.xlsx`).
-- **🧩 Structural Chunking**: Smart Markdown splitting that respects heading boundaries (`#` to `######`) for better semantic coherence.
+- **👁️ Multimodal PDF Parsing**: Integrated **Python (PyMuPDF)** + **Zhipu GLM-4V** pipeline for layout-aware text and image extraction.
+- **🖼️ Vision-Enhanced Indexing**: Automatically converts PDF images, hexagrams, and symbols into searchable text descriptions via VLM.
+- **📦 Smart Media Storage**: Supports both local persistence and **Cloudflare R2 / S3-compatible** cloud storage for extracted images.
+- **⚡ High Performance**: Bulk indexing using PostgreSQL `UNNEST` operations for 10x faster ingestion.
+- **🏮 Chinese Optimized**: Application-layer Chinese segmentation (via `segmentit`) combined with PostgreSQL 'simple' FTS configuration.
+- **📄 Multi-format Support**: Native support for Markdown, PDF, Word (`.docx`), and Excel (`.xlsx`).
+- **🧩 Structural Chunking**: Heading-aware splitting for better semantic coherence.
 - **🤖 Provider Agnostic**: Native support for OpenAI, Zhipu AI, and Aliyun (DashScope).
-- **🔋 Production Ready**: Built-in API retry logic, concurrency control, and CJK-aware token estimation.
 - **💾 Lightweight**: Zero native dependencies, works on managed PostgreSQL (Supabase, RDS, etc.).
 
-## Installation
+## 📦 Installation
 
 ```bash
 npm install @omnitexts/pg-memo
-# Optional: for PDF/Word/Excel support
-npm install mammoth xlsx
+# For PDF/Word/Excel support
+npm install mammoth xlsx @aws-sdk/client-s3
 ```
 
-## Quick Start
+> **Note**: For advanced PDF multimodal extraction, ensure `python3` with `pymupdf` and `zhipuai` is installed.
+
+## 🛠️ Quick Start
 
 ```typescript
 import { PgMemoryManager } from "@omnitexts/pg-memo";
@@ -29,32 +33,40 @@ const manager = new PgMemoryManager({
   connectionString: "postgresql://user:pass@localhost:5432/db",
   schema: "my_app_memory",
   workspaceDir: "./docs",
-  embeddingProvider: myProvider, // OpenAI, Zhipu, etc.
-  extensions: [".md", ".pdf"],
+  embeddingProvider: zhipuProvider,
+  // Multimodal Media Configuration
+  media: {
+    baseUrl: "https://pub-xxx.r2.dev/", // Your public domain (Local or R2)
+    s3: {
+      bucket: "my-bucket",
+      endpoint: "https://<id>.r2.cloudflarestorage.com",
+      accessKeyId: "...",
+      secretAccessKey: "..."
+    }
+  }
 });
 
-// Sync files to database
+// Sync and search
 await manager.sync();
-
-// Hybrid Search (Vector + Keyword)
-const results = await manager.search("如何优化数据库索引?");
-console.log(results);
+const results = await manager.search("乾卦九三爻的含义");
 ```
 
-## Advanced Features
+## 💎 Advanced Optimizations
 
-### Real-time Sync
+### 1. Vision-Enhanced PDF Extraction
+We've bridged Node.js with a Python-based extraction engine that:
+- **Deduplicates Images**: Uses MD5 hashing to avoid redundant VLM API calls and storage.
+- **Layout Awareness**: Maintains correct reading order between text and images.
+- **VLM Tagging**: Automatically injects `![description](url)` into the index, making visual content fully searchable.
+
+### 2. Flexible Image Persistence
+- **Local Mode**: Automatically saves images to a `media/` subfolder relative to your files.
+- **Cloud Mode**: Seamlessly uploads to Cloudflare R2 or S3, enabling global accessibility for your agent's knowledge base.
+
+### 3. Real-time Sync & Watch
 ```typescript
-// Watch for file changes and auto-sync
-manager.startWatching();
-
-manager.onSync((event) => {
-  console.log(`Syncing ${event.files.length} files: ${event.reason}`);
-});
+manager.startWatching(); // Auto-sync on file changes with debounce support
 ```
 
-### Custom Chinese FTS
-We use `segmentit` to pre-tokenize Chinese text in the application layer. This allows you to use standard PostgreSQL without installing `zhparser` or `pg_jieba`.
-
-## License
+## 📄 License
 MIT

@@ -63,6 +63,7 @@ export async function readFileEntry(
   workspaceDir: string,
   chunkConfig?: ChunkConfig,
   readerMap?: Map<string, FileReader>,
+  options?: { media?: any }
 ): Promise<FileEntry | null> {
   let stat;
   try {
@@ -79,7 +80,7 @@ export async function readFileEntry(
     const reader = getReader(ext, readerMap);
     if (!reader) return null;
     try {
-      const result = await reader.read(filePath);
+      const result = await reader.read(filePath, options);
       content = result.content;
     } catch (err) {
       console.warn(`[pg-memo] Failed to read ${filePath}: ${err}`);
@@ -122,6 +123,7 @@ export async function scanWorkspace(
   options?: {
     extensions?: string[];
     readers?: FileReader[];
+    media?: any;
   },
 ): Promise<FileEntry[]> {
   const extensions = options?.extensions ?? DEFAULT_EXTENSIONS;
@@ -135,7 +137,7 @@ export async function scanWorkspace(
   // Scan workspace dir
   const found = await listFiles(workspaceDir, extSet);
   for (const f of found) {
-    const entry = await readFileEntry(f, workspaceDir, chunkConfig, readerMap);
+    const entry = await readFileEntry(f, workspaceDir, chunkConfig, readerMap, options);
     if (entry) files.push(entry);
   }
 
@@ -151,13 +153,13 @@ export async function scanWorkspace(
     if (stat.isDirectory()) {
       const extraFound = await listFiles(resolved, extSet);
       for (const f of extraFound) {
-        const entry = await readFileEntry(f, workspaceDir, chunkConfig, readerMap);
+        const entry = await readFileEntry(f, workspaceDir, chunkConfig, readerMap, options);
         if (entry) files.push(entry);
       }
     } else if (stat.isFile()) {
       const ext = path.extname(resolved).toLowerCase();
       if (extSet.has(ext)) {
-        const entry = await readFileEntry(resolved, workspaceDir, chunkConfig, readerMap);
+        const entry = await readFileEntry(resolved, workspaceDir, chunkConfig, readerMap, options);
         if (entry) files.push(entry);
       }
     }
@@ -174,7 +176,8 @@ export async function readSingleFile(
   workspaceDir: string,
   chunkConfig?: ChunkConfig,
   readers?: FileReader[],
+  options?: { media?: any }
 ): Promise<FileEntry | null> {
   const readerMap = readers ? buildReaderMap(readers) : undefined;
-  return readFileEntry(filePath, workspaceDir, chunkConfig, readerMap);
+  return readFileEntry(filePath, workspaceDir, chunkConfig, readerMap, options);
 }

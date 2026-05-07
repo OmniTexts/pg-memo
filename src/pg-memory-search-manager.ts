@@ -341,6 +341,7 @@ export class PgMemoryManager implements PgMemorySearchManager {
             {
               extensions: this.config.extensions,
               readers: this.config.readers,
+              media: this.config.media,
             },
           );
           if (files.length > 0) {
@@ -670,6 +671,7 @@ export class PgMemoryManager implements PgMemorySearchManager {
       chunkConfig: this.chunkConfig,
       extensions: this.config.extensions,
       readers: this.config.readers,
+      media: this.config.media,
       onSync: async (files, reason, deleted) => {
         await this.ensureProviderInitialized();
         if (deleted && deleted.length > 0) {

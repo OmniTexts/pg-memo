@@ -9,7 +9,10 @@ export type FileReader = {
   /** File extensions this reader handles (e.g. [".pdf"]) */
   extensions: string[];
   /** Extract text content from a file */
-  read(filePath: string): Promise<{ content: string; metadata?: Record<string, unknown> }>;
+  read(
+    filePath: string,
+    options?: { media?: PgMemoryConfig["media"] }
+  ): Promise<{ content: string; metadata?: Record<string, unknown> }>;
 };
 
 /** Search result, compatible with openclaw's MemorySearchResult */
@@ -140,6 +143,20 @@ export type PgMemoryConfig = {
     debounceMs?: number;
     /** Periodic full sync interval in minutes (0 = disabled) */
     intervalMinutes?: number;
+  };
+  /** Media/Image storage configuration */
+  media?: {
+    /** Folder to save images locally (used as temp dir for cloud uploads) */
+    rootPath?: string;
+    /** URL prefix for images in markdown (e.g. your R2 public domain) */
+    baseUrl?: string;
+    /** Cloudflare R2 / S3 configuration */
+    s3?: {
+      bucket: string;
+      endpoint: string;
+      accessKeyId: string;
+      secretAccessKey: string;
+    };
   };
 };
 

@@ -26,7 +26,7 @@ async function main() {
   const connectionString =
     process.env.PG_CONNECTION_STRING ||
     "postgresql://postgres:123456@localhost:5432/postgres";
-  const schema = "example_chinese";
+  const schema = "example_vlm";
 
   // Workspace: fixtures directory with sample.pdf, sample.docx, sample.xlsx
   const workspace = path.resolve(__dirname, "fixtures");
@@ -39,18 +39,19 @@ async function main() {
     embeddingProvider: process.env.ZHIPU_API_KEY
       ? new (await import("../src/index.js")).ZhipuEmbeddingProvider({
           model: "embedding-3",
+          dimensions: 2048,
         })
       : {
           id: "mock",
           model: "mock-model",
           async embedQuery() {
-            return new Array(256).fill(0).map(() => Math.random());
+            return new Array(2048).fill(0).map(() => Math.random());
           },
           async embedBatch(texts) {
-            return texts.map(() => new Array(256).fill(0).map(() => Math.random()));
+            return texts.map(() => new Array(2048).fill(0).map(() => Math.random()));
           },
         },
-    vectorDims: 256,
+    vectorDims: 2048,
     vectorEnabled: true,
     hybridEnabled: true,
     extensions: [".md", ".pdf", ".docx", ".xlsx"],

@@ -24,6 +24,8 @@ export type FileWatcherOptions = {
   extensions?: string[];
   /** Custom file readers */
   readers?: FileReader[];
+  /** Media/Image storage configuration */
+  media?: any;
   /** Callback when files are ready to sync */
   onSync: (files: FileEntry[], reason: string, deleted?: string[]) => Promise<void>;
   /** Logger */
@@ -58,6 +60,7 @@ export class FileWatcher {
       chunkConfig: opts.chunkConfig,
       extensions: opts.extensions,
       readers: opts.readers,
+      media: opts.media,
       onSync: opts.onSync,
       log: opts.log ?? (() => {}),
     };
@@ -156,6 +159,7 @@ export class FileWatcher {
         {
           extensions: this.opts.extensions,
           readers: this.opts.readers,
+          media: this.opts.media,
         },
       );
       this.dirtyFiles.clear();
@@ -199,6 +203,7 @@ export class FileWatcher {
           this.opts.workspaceDir,
           this.opts.chunkConfig,
           this.opts.readers,
+          { media: this.opts.media }
         );
         if (entry) entries.push(entry);
       }

@@ -69,7 +69,8 @@ manager.startWatching(); // Auto-sync on file changes with debounce support
 ```
 
 ## 📚 Documentation
-- [Database Schema & Multimedia Storage](./docs/database-schema.md)
+- [Database Schema & Multimedia Storage (EN)](./docs/database-schema.md)
+- [数据库架构与多媒体存储 (ZH)](./docs/database-schema-zh.md)
 
 ## 📄 License
 MIT
